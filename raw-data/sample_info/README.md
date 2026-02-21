@@ -1,3 +1,2 @@
 # sample_info
-
-We typically store here the Excel Summary files with the sample information prior to sequencing. See https://github.com/LieberInstitute/DLPFC_snRNAseq/tree/main/raw-data/sample_info for example.
+The samples information is store in a object sumarize experiment, same that is located i the path `processed-data/objects_R/rse_gene_SRP187821_parsed.Rdata`, this object is the prodcut of the code title `code/Explore_chargue_data/Explore_&_read.R`

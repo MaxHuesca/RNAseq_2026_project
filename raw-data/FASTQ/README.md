@@ -1,3 +1,3 @@
 # FASTQ
 
-We typically use soft links to link to external directories at JHPCE that contain the FASTQ files. We record the commands use for creating the soft links on the `README.md` files. See https://github.com/LieberInstitute/spatial_hpc/tree/main/raw-data/FASTQ for an example.
+The raw data was obtain from the library `recount3` especifically we use the project id `SRP187821` with the title "The major risk factors for Alzheimer's disease: Age, Sex and Genes, modulate the microglia response to Aß plaques (KW)" for more information about the chargue and pre-process of the data review the code `code/Explore_chargue_data/Explore_&_read.Rmd`

@@ -1,0 +1,78 @@
+---
+output: 
+  pdf_document: 
+    toc: yes
+    toc_depth: 5
+    fig_caption: true
+    keep_tex: true
+    number_sections: true
+    latex_engine: xelatex
+    includes:
+      before_body: portada.tex
+fontsize: 11pt
+mainfont: Times New Roman
+header-includes:
+  - \usepackage{fancyvrb}
+  - \fvset{fontsize=\tiny}
+  - \usepackage{float}
+  - \usepackage{graphicx}
+  - \usepackage{geometry}
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{fontsize=\footnotesize,commandchars=\\\{\}}
+  - \DefineVerbatimEnvironment{Verbatim}{Verbatim}{fontsize=\footnotesize}
+  - \usepackage[hyphens]{url}
+  - \usepackage{microtype}
+bibliography: referencias.bib 
+csl: apa.csl
+--- 
+
+The next part to narrow down a diferential expression analysis is to pre-process the data, which includes exploring the data, filtering, and normalizing it. In this section, we will explore the data and perform some pre-processing steps to prepare it for the differential expression analysis. In this part also is hellpfull to visuzalize the data to understand the conformation and state of the data, this with the principal porpose of identify any important variable that has to be included in the model to avoid confounding effects.
+
+```{r]
+#first of all we load the object and libraries that we required
+library(recount3)
+library(edgeR)
+library(ggplot2)
+library(SummarizedExperiment)
+library(iSEE)
+
+load("processed-data/objects_R/rse_gene_SRP187821_parsed.Rdata")
+
+```
+
+## Exploring the data
+In this section we try to visualize the distribution of the data according to differents groups related with our qualitative variables, for this purpose we can use boxplots, density plots, and PCA plots to visualize the distribution of the data and identify any potential outliers or batch effects. This is related, for example eith the plate the mise were processed, or view diference between gruops with different phenotypes in our dataset, even in groups with the same phenotype but different sex or age. 
+
+
+### iSEE 
+One good alternative to explore the data in an interactive way is to use the library `ìSEE` that use the obects of summarize experiment to make panels of diferent types of plots
+
+```{r}
+iSEE:
+
+```
+
+### Boxplots and density plots
+The boxplots are helpfull to visualize the distribution of the data and identify any potential outliers, while the density plots can help to visualize the overall distribution of the data and identify any potential batch effects. 
+
+Firstky we can use boxplots to visualize if there any potential batch effect related with variables like **plate**. 
+
+```{r]
+
+```
+
+### PCA plots
+
+```{r]
+
+```
+
+## Filtering by 
+
+
+### Number of reads per group 
+For this section is important to think about the groups we are evaluating 
+
+### Expression levels 
