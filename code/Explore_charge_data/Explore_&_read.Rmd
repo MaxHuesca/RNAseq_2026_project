@@ -7,8 +7,6 @@ output:
     keep_tex: true
     number_sections: true
     latex_engine: xelatex
-    includes:
-      before_body: portada.tex
 fontsize: 11pt
 mainfont: Times New Roman
 header-includes:
@@ -23,8 +21,7 @@ header-includes:
   - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{fontsize=\footnotesize,commandchars=\\\{\}}
   - \DefineVerbatimEnvironment{Verbatim}{Verbatim}{fontsize=\footnotesize}
   - \usepackage[hyphens]{url}
-  - \usepackage{microtype}
-bibliography: referencias.bib 
+  - \usepackage{microtype} 
 csl: apa.csl
 ---
 \newpage
@@ -88,6 +85,7 @@ project_info_df <- data.frame(
 ```
 
 ### Using interactive search of recount3
+
 Recount3 also provides an interactive search interface that allows you to explore the available projects and samples more easily. You can use the `interactiveDisplayBase::display(human_projects)` function to launch an interactive display of the human projects available in recount3. 
 
 ```{r}
@@ -99,24 +97,23 @@ proj_info_interactive <- interactiveDisplayBase::display(human_projects)
 ```
 
 Another alternative is to review the projects related to the data that is stored in the counts accesible when you load the data with `recount3::create_rse()`. This function allows you to create a RangedSummarizedExperiment object that contains the count data and associated metadata for a specific project. You can then explore the metadata to find information about the project and its samples. 
-Either way, we can review the projects information available in [recount3_projects](https://jhubiostatistics.shinyapps.io/)recount3-study-explorer/
+Either way, we can review the projects information available in [recount3_projects](https://jhubiostatistics.shinyapps.io/recount3-study-explorer/)
 
 Now with a selected prjoect we start with the load and preproccessing of the data. 
 
 ```{r}
 #Now weare going to initialize the object of summarized experiment to narrow down the Data loading a preporccesing
-rse_gene_SRP187821_raw <- recount3::create_rse_manual(
-  project = "SRP187821",
+rse_gene_SRP119675_raw <- recount3::create_rse_manual(
+  project = "SRP119675",
   project_home = "data_sources/sra",
   organism = "mouse",
   annotation = "gencode_v23",
   type = "gene"
 )
 #and compute the counts with the function compute_read_counts
-assay(rse_gene_SRP187821_raw, "counts") <- compute_read_counts(
-  rse_gene_SRP187821_raw
+assay(rse_gene_SRP119675_raw, "counts") <- compute_read_counts(
+  rse_gene_SRP119675_raw
 )
-
 ```
 
 Then que can start exploring the data loaded to see the status and charesteristics of the data. We can start with the dimensions of the data, the number of genes and samples, and then we can review the metadata associated with the samples to understand the experimental design and conditions. 
@@ -125,15 +122,15 @@ Then que can start exploring the data loaded to see the status and charesteristi
 #we can see teh title of the project with the metadata of the object
 cat(
   "The project title is:",
-  rse_gene_SRP187821_raw$sra.study_title[1],
+  rse_gene_SRP119675_raw$sra.study_title[1],
   "\n"
 )
 
 cat(
   "With a total number of genes of:",
-  dim(rse_gene_SRP187821_raw)[1],
+  dim(rse_gene_SRP119675_raw)[1],
   "In this number of samples:",
-  dim(rse_gene_SRP187821_raw)[2],
+  dim(rse_gene_SRP119675_raw)[2],
   "\n"
 )
 ```
@@ -142,24 +139,16 @@ Now it is important to review the attributes of the sra samples, in order to hav
 
 ```{r, echo=FALSE} 
 #we can see teh title of the project with the metadata of the object
-rse_gene_SRP187821_raw$sra.sample_attributes[1:10]
+rse_gene_SRP119675_raw$sra.sample_attributes[1:9]
 ```
 
-We can see that the sample attributes do not have a errors with missing values in the first 10 samples so we can trie to expand this attributes. 
-
-```{r, error=TRUE} 
-#we can see teh title of the project with the metadata of the object
-rse_gene_SRP187821_raw <- expand_sra_attributes(rse_gene_SRP187821_raw)
-```
-
-We can note that the `expand_sra_attributes` failed to expand those atrributes we had see before, so now we can search for problems in the structure. 
-We are reviewing for values like "NA" or inconsistent gaps in the structure like samples without the atrributes for expanding.
+We can see that the sample attributes do not have a errors with missing values in the first 10 samples so we can trie to expand this attributes so we procesed to make sure it is consistent with all the samples that are provided in the data sets so now we can search for posible problems in the structure. Particulary we are reviewing for values like "NA" or inconsistent gaps in the structure like samples without the atrributes for expanding.
 
 ```{r, echo=FALSE} 
 # first we explore if we have NA values in the structre
 cat(
   "The project has this number of NA values in the sample attributes:",
-  sum(is.na(rse_gene_SRP187821_raw$sra.sample_attributes)),
+  sum(is.na(rse_gene_SRP119675_raw$sra.sample_attributes)),
   "\n"
 )
 
@@ -168,36 +157,36 @@ cat(
 cat(
   "The project has this distibutions of the strcture 'atribute_1;;value_1|atribute_2;;value_2':",
   table(stringr::str_count(
-    rse_gene_SRP187821_raw$sra.sample_attributes,
+    rse_gene_SRP119675_raw$sra.sample_attributes,
     "\\|"
   )),
   "\n"
 )
 ```
 
-We can see that we have about 9 samples that are empty, and for that do not have the metadata necessary for the analysis, this should be the problem of the expand attributes attemps, so we can have to removed it, filtering those that the count of | in their structure are different from 9. 
+We can see that neither of the samples atributes are NA nor are inconsistent with the number of atributes in te structure `atribute_1;;value_1|atribute_2;;value_2`, so we can expand the atributes usign the function for the Summarize experiment object `expand_sra_attributes()`
 
 ```{r, echo=FALSE} 
-# first we explore if we have NA values in the structre
+# We delete the samples that do not have all the sra atributes
 valid <- stringr::str_count(
-  rse_gene_SRP187821_raw$sra.sample_attributes,
+  rse_gene_SRP119675_raw$sra.sample_attributes,
   "\\|"
 ) ==
-  9
+  6
 
-rse_gene_SRP187821 <- rse_gene_SRP187821_raw[, valid]
+rse_gene_SRP119675 <- rse_gene_SRP119675_raw[, valid]
+
+#we trie to expand the attributes again with the filtered data, and now it should work without problems
+rse_gene_SRP119675 <- expand_sra_attributes(rse_gene_SRP119675)
 ``` 
 
-Now with the data filtered we can try again to expand the attributes, and now we can see that it works without problems. 
+Now we can see the atributes that were expanded and those are considered our variables that we can use in the model of de diferential expression analysis 
 
 ```{r, error=TRUE, echo=FALSE} 
-#we trie to expand the attributes again with the filtered data, and now it should work without problems
-rse_gene_SRP187821 <- expand_sra_attributes(rse_gene_SRP187821)
-
 #we saw the atributes it has expanded
-expanded_atributes <- colData(rse_gene_SRP187821)[, grepl(
+expanded_atributes <- colData(rse_gene_SRP119675)[, grepl(
   "^sra_attribute",
-  colnames(colData(rse_gene_SRP187821))
+  colnames(colData(rse_gene_SRP119675))
 )]
 
 cat(
@@ -207,7 +196,7 @@ cat(
 )
 ``` 
 
-Now we can adjust the types of the atributes in order to have them ready for a stadistical analysis
+So then we have to adjust the types of the atributes in order to have them ready for a stadistical analysis, firts reviewing the data types of the sra atributes
 
 ```{r, echo=FALSE} 
 cat(
@@ -215,35 +204,43 @@ cat(
   type(expanded_atributes),
   "\n"
 )
+
+summary(as.data.frame(expanded_atributes))
 ``` 
 
 We can changue the types of: 
 
 as.factor: 
-- sra_attribute.plate
-- sra_attribute.Sex
-- sra_attribute.genotype
-- sra_attribute.lane
-
-as.numeric: 
-- sra_attribute.age
+- sra_attribute.gender
+- sra_attribute.genotype 
+- sra_attribute.tissue
+- sra_attribute.source_name
+- sra_attribute.brain_region
 
 ```{r, echo=FALSE} 
 #we can adjust the types of the attributes
-rse_gene_SRP187821$sra_attribute.plate <- as.factor(
-  rse_gene_SRP187821$sra_attribute.plate
+rse_gene_SRP119675$sra_attribute.gender <- as.factor(
+  rse_gene_SRP119675$sra_attribute.gender
 )
-rse_gene_SRP187821$sra_attribute.Sex <- as.factor(
-  rse_gene_SRP187821$sra_attribute.Sex
+
+rse_gene_SRP119675$sra_attribute.genotype <- as.factor(
+  rse_gene_SRP119675$sra_attribute.genotype
 )
-rse_gene_SRP187821$sra_attribute.age <- as.numeric(
-  rse_gene_SRP187821$sra_attribute.age
+
+rse_gene_SRP119675$sra_attribute.tissue <- as.factor(
+  rse_gene_SRP119675$sra_attribute.tissue
 )
-rse_gene_SRP187821$sra_attribute.genotype <- as.factor(
-  rse_gene_SRP187821$sra_attribute.genotype
+
+rse_gene_SRP119675$sra_attribute.source_name <- as.factor(
+  rse_gene_SRP119675$sra_attribute.source_name
 )
-rse_gene_SRP187821$sra_attribute.lane <- as.factor(
-  rse_gene_SRP187821$sra_attribute.lane
+
+rse_gene_SRP119675$sra_attribute.age <- as.factor(
+  rse_gene_SRP119675$sra_attribute.age
+)
+
+rse_gene_SRP119675$sra_attribute.brain_region <- as.factor(
+  rse_gene_SRP119675$sra_attribute.brain_region
 )
 ``` 
 
@@ -251,39 +248,12 @@ Now we can resume the exploration of the data with the new attributes, and we ca
 
 ```{r, echo=FALSE}
 #we can see the distribution of the samples in the different categories of the attributes
-summary(as.data.frame(colData(rse_gene_SRP187821)[, grepl(
+summary(as.data.frame(colData(rse_gene_SRP119675)[, grepl(
   "^sra_attribute",
-  colnames(colData(rse_gene_SRP187821))
+  colnames(colData(rse_gene_SRP119675))
 )]))
 ``` 
 
-We note that we have a weird distribution of the age attribute, this beacause in the experimental design of where the data came from they have 3 different age groups, but they are not well defined in the metadata, so we can create a new attribute with the age groups defined. 
-
-```{r,echo=FALSE}
-#we can create a new attribute with the age groups defined
-rse_gene_SRP187821$sra_attribute.age_group <- factor(
-  rse_gene_SRP187821$sra_attribute.age,
-  levels = c(3, 6, 12, 21),
-  labels = c("M3", "M6", "M12", "M21")
-)
-
-expanded_atributes <- colData(rse_gene_SRP187821)[, grepl(
-  "^sra_attribute",
-  colnames(colData(rse_gene_SRP187821))
-)]
-
-cat(
-  "The project has the following attributes after expanding:\n",
-  paste(colnames(expanded_atributes), collapse = "\n"),
-  "\n"
-)
-
-
-print("with the following distribution of the age groups:")
-summary(as.data.frame(colData(rse_gene_SRP187821)[, grepl(
-  "^sra_attribute",
-  colnames(colData(rse_gene_SRP187821))
-)]))
-``` 
+With this we can see there are important variables for consider in our DE analysis, varibles like age, genotype or gender would be interesant to explore once we narrow down the following steps. 
 
 With all this parsed data and assigned types we now start narrowing down the first step of a differential expression analysis, which is the exploration of the data and the review of the experimental design, in order to have a clear understanding of the data we are going to analyze and the conditions we are going to compare. 

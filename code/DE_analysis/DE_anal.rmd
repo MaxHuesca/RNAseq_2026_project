@@ -1,0 +1,130 @@
+---
+output: 
+  pdf_document: 
+    toc: yes
+    toc_depth: 5
+    fig_caption: true
+    keep_tex: true
+    number_sections: true
+    latex_engine: xelatex
+fontsize: 11pt
+mainfont: Times New Roman
+header-includes:
+  - \usepackage{fancyvrb}
+  - \fvset{fontsize=\tiny}
+  - \usepackage{float}
+  - \usepackage{graphicx}
+  - \usepackage{geometry}
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{fontsize=\footnotesize,commandchars=\\\{\}}
+  - \DefineVerbatimEnvironment{Verbatim}{Verbatim}{fontsize=\footnotesize}
+  - \usepackage[hyphens]{url}
+  - \usepackage{microtype} 
+csl: apa.csl
+---
+\newpage 
+
+With the previous steps of a DE analysis now we can narrow down the formal DE analysis for this we are using the [limma](https://bioconductor.org/packages//release/bioc/html/limma.html) package, this package adjust linear models to the genes to acces linear regretions about its expression and then adjust that values to model the diferential expression genes, becaouse it accounts with large amounts of testing it retruves a padj value associated with the log2 fold changues. 
+
+```{r}
+#chargue the neccesary libraries
+library(limma)
+library(SummarizedExperiment)
+library(ggplot2)
+
+#cragamos los obejtos necesarios
+load("Results/objects_R/rse_gene_SRP119675_preprocessed.Rdata")
+load("Results/objects_R/rse_gene_SRP119675_dge_normalized.Rdata")
+```
+
+### Defining a model 
+As we could see in the preprocessing part of the analysis the variables that are relavant for explaining variance in some genes that would be of interest are: 
+- sra_attribute.genotype --> as the principal 
+- sra_attribute.age 
+- sra_attribute.gender 
+
+So with this in mind we can define our `model.matrix` object for account for our estadistical assuptions 
+
+```{r}
+#define the object
+mod <- model.matrix(
+  ~ sra_attribute.genotype + sra_attribute.age + sra_attribute.gender,
+  data = colData(rse_gene_SRP119675_filtered)
+)
+
+#visualize the attributes we are modeling
+print(colnames(mod))
+
+#we can compare this with our levels of our variables to know which is the reference used for the intercept, because for default analysis modelmatrix use the first level of the attribute:
+print("The reference levels or baseline we are using are")
+
+cat(
+  "For the genotype:\n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype)[1],
+  "\n"
+)
+
+cat(
+  "For the age:\n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.age)[1],
+  "\n"
+)
+
+cat(
+  "For the gender:\n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.gender)[1],
+  "\n"
+)
+``` 
+
+We can see that the baseline for our firt variable genotype is the 5xFAD, beacuse it is a genotype that is used for exploring alzheimer disease in mouse (3 APP mutations) it shoul be more convinient to changue it for the wildtype 
+
+```{r}
+#redifine the first element of the levels
+colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype <- relevel(
+  colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype,
+  ref = "WT"
+)
+
+cat(
+  "The new baselinen for the genotype would be: \n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype)[1],
+  "\n"
+)
+
+#redifine de model
+mod <- model.matrix(
+  ~ sra_attribute.genotype + sra_attribute.age + sra_attribute.gender,
+  data = colData(rse_gene_SRP119675_filtered)
+)
+
+#visualize the attributes we are modeling
+print(colnames(mod))
+
+```
+
+Now we can fit this model to the linear one that use limma 
+
+```{r}
+vGene <- voom(dge, mod, plot = TRUE)
+
+eb_results <- eBayes(lmFit(vGene))
+
+de_results <- topTable(
+  eb_results,
+  coef = 2,
+  number = nrow(rse_gene_SRP119675_filtered),
+  sort.by = "none"
+)
+dim(de_results)
+``` 
+
+#### Someplots 
+
+```{r}
+plotMA(eb_results, coef = 2)
+
+volcanoplot(eb_results, coef = 4, highlight = 5, names = de_results$gene_name)
+```
