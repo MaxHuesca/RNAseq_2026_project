@@ -1,12 +1,18 @@
 ## Load required packages first
 library("recount3") ## for obtain the data of RNAseq
 
-outdir = "Results"
-
+#===============================================================================
+#Making output paths
+#===============================================================================
+outdir = "Results/objects_R"
 if (!dir.exists(outdir)) {
   dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 }
 
+
+#===============================================================================
+#Retrive the object of the data as a Summarize experiment one
+#===============================================================================
 #Now weare going to initialize the object of summarized experiment to narrow down the Data loading a preporccesing
 rse_gene_SRP119675_raw <- recount3::create_rse_manual(
   project = "SRP119675",
@@ -16,11 +22,19 @@ rse_gene_SRP119675_raw <- recount3::create_rse_manual(
   type = "gene"
 )
 
+#===============================================================================
+#First proccesing of the data
+#===============================================================================
+
 #Now we compute the read counts for the project and we store it in the assay of the summarized experiment object
 assay(rse_gene_SRP119675_raw, "counts") <- compute_read_counts(
   rse_gene_SRP119675_raw
 )
 
+
+#===============================================================================
+#Make sure all the sra atributes has the same structure
+#===============================================================================
 #we filter the sra attributes to obtain only those samples that contain al the 96features
 valid <- stringr::str_count(
   rse_gene_SRP119675_raw$sra.sample_attributes,
@@ -29,6 +43,10 @@ valid <- stringr::str_count(
   6
 
 rse_gene_SRP119675 <- rse_gene_SRP119675_raw[, valid]
+
+#===============================================================================
+#Expand and transform the sra atributes
+#===============================================================================
 
 #with the data charged we can expnand the atrributes of the summarized experiment object to obtain more information about the project and the samples
 rse_gene_SRP119675 <- expand_sra_attributes(rse_gene_SRP119675)
@@ -53,18 +71,15 @@ rse_gene_SRP119675$sra_attribute.brain_region <- as.factor(
   rse_gene_SRP119675$sra_attribute.brain_region
 )
 
-dir.create(
-  file.path(outdir, "objects_R"),
-  recursive = TRUE,
-  showWarnings = FALSE
-)
+#===============================================================================
+#save objects
+#===============================================================================
 
 #Finaly we store the object that we generated for future scripts
 save(
   rse_gene_SRP119675,
   file = file.path(
     outdir,
-    "objects_R",
     "rse_gene_SRP119675_parsed.Rdata"
   )
 )

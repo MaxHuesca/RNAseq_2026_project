@@ -33,8 +33,10 @@ With the previous steps of a DE analysis now we can narrow down the formal DE an
 library(limma)
 library(SummarizedExperiment)
 library(ggplot2)
+library(ComplexHeatmap)
+library(ggrepel)
 
-#cragamos los obejtos necesarios
+#load the previous generated objects
 load("Results/objects_R/rse_gene_SRP119675_preprocessed.Rdata")
 load("Results/objects_R/rse_gene_SRP119675_dge_normalized.Rdata")
 ```
@@ -45,12 +47,15 @@ As we could see in the preprocessing part of the analysis the variables that are
 - sra_attribute.age 
 - sra_attribute.gender 
 
-So with this in mind we can define our `model.matrix` object for account for our estadistical assuptions 
+So with this in mind we can define our `model.matrix` object for account for our estadistical assuptions, knowing that great part of the variance is explicated also for the age so we can model this as a interation model where the genotype can vary the expression of the genes as the age of the mice in the study 
+$$
+Y=\beta_0​+\beta_G​+\beta_T​+\beta_G:T​+\beta_S​+\epsilon
+$$
 
 ```{r}
 #define the object
 mod <- model.matrix(
-  ~ sra_attribute.genotype + sra_attribute.age + sra_attribute.gender,
+  ~ sra_attribute.genotype * sra_attribute.age + sra_attribute.gender,
   data = colData(rse_gene_SRP119675_filtered)
 )
 
@@ -79,10 +84,12 @@ cat(
 )
 ``` 
 
-We can see that the baseline for our firt variable genotype is the 5xFAD, beacuse it is a genotype that is used for exploring alzheimer disease in mouse (3 APP mutations) it shoul be more convinient to changue it for the wildtype 
+We can see that the baseline for our firt variable genotype is the 5xFAD, beacuse it is a genotype that is used for exploring alzheimer disease (AD) in mouse (3 APP mutations) we can conserved it to explore in a more easy way the efect of the upregulated expression of TREM2 copared with the genes expresed in a AD model mouse  
 
-```{r}
+```{r, eval= FALSE}
 #redifine the first element of the levels
+
+#only if we want to changue the order of the model to set "WT as reference"
 colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype <- relevel(
   colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype,
   ref = "WT"
@@ -111,20 +118,194 @@ Now we can fit this model to the linear one that use limma
 vGene <- voom(dge, mod, plot = TRUE)
 
 eb_results <- eBayes(lmFit(vGene))
-
-de_results <- topTable(
-  eb_results,
-  coef = 2,
-  number = nrow(rse_gene_SRP119675_filtered),
-  sort.by = "none"
-)
-dim(de_results)
 ``` 
 
-#### Someplots 
+Once he have made the DE modeling we can analyze the results in fucntion of our design it is important to note that the coeficients in the DE model reflex the diference (because the way we define our model) with the reference in genotype, age and gener (those variables to consider because there were explaining a important part of variance among some genes) in our case the results are contrasted with the genotype 5XFAD, gender female and age 2m. 
 
 ```{r}
-plotMA(eb_results, coef = 2)
-
-volcanoplot(eb_results, coef = 4, highlight = 5, names = de_results$gene_name)
+attributes_mod <- colnames(mod)
+for (attribute in attributes_mod[-1]) {
+  cat(
+    "The position of the atrribute",
+    attribute,
+    "is the coef:",
+    match(attribute, attributes_mod),
+    "\n"
+  )
+}
 ```
+
+So now with the resolution of the model that is the resolution of the coficents for the adjusment of the linear model to our variables we can plot the diferent comparations we are mading for that we are going to extract the tables from the complex `eb_results`(class `MArrayLM`). 
+
+### Volcano Plots  
+Before making the volcano plots we have to extract the top tables of the data acoording to the comparison (coeficents before showed) 
+
+```{r}
+#we store the names of the
+coef_names <- colnames(mod)[-1]
+
+#apply anonymus function lambda
+tt_list <- lapply(coef_names, function(coef_name) {
+  topTable(
+    eb_results,
+    coef = coef_name,
+    number = nrow(rse_gene_SRP119675_filtered),
+    sort.by = "none"
+  )
+})
+
+#save the names of our comparisons
+names(tt_list) <- coef_names
+```
+
+Now we can plot it 
+
+```{r}
+#We set the coutes for significant diferential expressed genes
+lfc_cut <- 1
+fdr_cut <- 0.05
+
+for (name in names(tt_list)) {
+  #extract the top table we are ploting
+  res <- tt_list[[name]]
+  plot_title <- paste(sub("sra_attribute.", "", name), " vs 5XFAD", sep = "")
+  #Clasify its value for them that are significant DE expressed (for coloring them)
+  res$group <- "NS"
+  res$group[res$adj.P.Val < fdr_cut & res$logFC > lfc_cut] <- "Up"
+  res$group[res$adj.P.Val < fdr_cut & res$logFC < -lfc_cut] <- "Down"
+
+  #also mark all those genes that arae significant for ploting its name
+  label_genes <- res[
+    res$adj.P.Val < 10 & abs(res$logFC) > lfc_cut,
+  ]
+
+  plot <- ggplot(res, aes(x = logFC, y = -log10(adj.P.Val), color = group)) +
+    geom_point(alpha = 0.7, size = 1.8) +
+    # Set lines for the tresholds
+    geom_vline(xintercept = c(-lfc_cut, lfc_cut), linetype = "dashed") +
+    geom_hline(yintercept = -log10(fdr_cut), linetype = "dashed") +
+    scale_color_manual(
+      values = c(
+        "Down" = "#2C7BB6", # azul
+        "NS" = "grey80", # gris tenue
+        "Up" = "#D7191C" # rojo
+      )
+    ) +
+    #Show the names of the genes
+    #geom_text_repel(
+    #  data = label_genes,
+    #  aes(label = rownames(label_genes)),
+    #  size = 3,
+    #  max.overlaps = 20
+    #) +
+    theme_minimal(base_size = 14) +
+    labs(
+      title = plot_title,
+      x = "log2 Fold Change",
+      y = "-log10 Adjusted P-value",
+      color = ""
+    )
+
+  print(plot)
+}
+```
+
+### HeatMap
+Now it is time to do a heatmap about the diferentianl expresion we can see in the genotype with alzheimer (5XFAD) tith those with the 5XFAD but with the TREM2 overexpression and how it changues over the time, something that we saw in the Volano plots is clear increase in up and downregulated genes. 
+
+
+#### BAC-TREM2 vs 5XFAD over the time 
+
+First we have to re calculate the fit model with the contrast by the time 
+
+```{r}
+#changue the names of the coeficents
+colnames(mod) <- make.names(colnames(mod))
+
+
+#we make the contrast acroos both times
+contrast.matrix <- makeContrasts(
+  C5XFAD_TREM2_vs_5XFAD_4m = sra_attribute.genotype5xFAD.BAC.TREM2.sra_attribute.age4m,
+  C5XFAD_TREM2_vs_5XFAD_7m = sra_attribute.genotype5xFAD.BAC.TREM2.sra_attribute.age7m,
+  levels = mod
+)
+
+eb_contrats_5X.TREM2 <- contrasts.fit(eb_results, contrast.matrix)
+eb_contrats_5X.TREM2 <- eBayes(eb_contrats_5X.TREM2)
+
+
+contrast.matrix <- makeContrasts(
+  TREM2_vs_5XFAD_4m = sra_attribute.genotypeBAC.TREM2.sra_attribute.age4m,
+  TREM2_vs_5XFAD_7m = sra_attribute.genotypeBAC.TREM2.sra_attribute.age7m,
+  levels = mod
+)
+
+eb_contrats.TREM2 <- contrasts.fit(eb_results, contrast.matrix)
+eb_contrats.TREM2 <- eBayes(eb_contrats.TREM2)
+
+
+#store the objects in a list
+contrast_list <- list(eb_contrats.TREM2, eb_contrats_5X.TREM2)
+names(contrast_list) <- c("5XFAD vs TREM2 ", "5XFAD vs 5XFAD-TREM2")
+```
+
+Now we can make the heatmaps 
+
+
+```{r}
+#retrive the anotaion of the genes in order to do not report that in the heatmaps
+annotation <- contrast_list[[1]]$genes
+annotation$gene_id_clean <- sub("\\..*$", "", annotation$gene_id)
+gene_map <- setNames(annotation$gene_name, annotation$gene_id_clean)
+
+dev.new()
+
+for (nm in names(contrast_list)) {
+  contrast <- contrast_list[[nm]]
+  plot_title <- nm
+
+  res_4m <- topTable(contrast, coef = 1, number = Inf)
+  res_7m <- topTable(contrast, coef = 2, number = Inf)
+
+  sig_genes <- unique(c(
+    rownames(res_4m[res_4m$adj.P.Val < 0.05, ]),
+    rownames(res_7m[res_7m$adj.P.Val < 0.05, ])
+  ))
+
+  if (length(sig_genes) == 0) {
+    next
+  }
+
+  sig_genes <- head(sig_genes, 50)
+
+  mat <- cbind(
+    "4m" = contrast$coefficients[sig_genes, 1],
+    "7m" = contrast$coefficients[sig_genes, 2]
+  )
+
+  clean_ids <- sub("\\..*$", "", rownames(mat))
+
+  rownames(mat) <- ifelse(
+    is.na(gene_map[clean_ids]),
+    clean_ids,
+    gene_map[clean_ids]
+  )
+
+  plot_ht <- Heatmap(
+    mat,
+    name = "log2 Fold Change",
+    column_title = plot_title,
+    cluster_columns = FALSE,
+    col = circlize::colorRamp2(
+      c(-2, 0, 2),
+      c("blue", "white", "red")
+    )
+  )
+
+  grid::grid.newpage()
+  draw(plot_ht)
+}
+
+``` 
+
+With this data we can know that there is a real effect in the pass of the time in expression acroos both comparsion betwen genotypes, we can see that the ones that have both alzheimer has the most dramaticaly log fold-changue, enrichment analysis would be good for draw back the biological information about the role of TREM2 in AD particulary in the model 5XFAD 

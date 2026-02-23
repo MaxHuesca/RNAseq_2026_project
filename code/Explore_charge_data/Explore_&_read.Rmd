@@ -26,19 +26,19 @@ csl: apa.csl
 ---
 \newpage
 
-### Exploración de paquetes de recount3
+### Exploration of the data in recount3
 recount3 is an online resource consisting of RNA-seq gene, exon, and exon-exon junction counts as well as coverage bigWig files for 8,679 and 10,088 different studies for human and mouse respectively. It is the third generation of the ReCount project and part of recount.bio. We can use functions like `available_projects()` to obtain a data frame with all the projects available in recount3, and then we can use functions like `create_rse_manual()` to create a RangedSummarizedExperiment object for a specific project, which contains the count data and associated metadata for that project.
 
 ```{r}
 library("recount3")
-# Obtenemos todos los proyectos disponibles
+#Obtain the firts 10 projects
 projects <- available_projects()
-# Y vemos la estructura de los datos
+#Show the structure of the data
 head(projects)
 
 cat(
   "Los proyectos disponibles son:",
-  paste(projects$project, collapse = "\n"),
+  paste(head(projects$project, 10), collapse = "\n"),
   "\n"
 )
 ```

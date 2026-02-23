@@ -1,0 +1,36 @@
+# Diferential expression analysis using a data set from recount3 
+
+## Exploration of the data in recount3
+recount3 is an online resource consisting of RNA-seq gene, exon, and exon-exon junction counts as well as coverage bigWig files for 8,679 and 10,088 different studies for human and mouse respectively. It is the third generation of the ReCount project and part of recount.bio. We can use functions like `available_projects()` to obtain a data frame with all the projects available in recount3, and then we can use functions like `create_rse_manual()` to create a RangedSummarizedExperiment object for a specific project, which contains the count data and associated metadata for that project. 
+
+```{r}
+library("recount3")
+#Obtain the firts 10 projects
+projects <- available_projects()
+#Show the structure of the data
+head(projects)
+
+cat(
+  "Los proyectos disponibles son:",
+  paste(head(projects$project, 10), collapse = "\n"),
+  "\n"
+)
+``` 
+
+### Using interactive search of recount3
+
+Recount3 also provides an interactive search interface that allows you to explore the available projects and samples more easily. You can use the `interactiveDisplayBase::display(human_projects)` function to launch an interactive display of the human projects available in recount3.  
+
+```{r}
+library("interactiveDisplayBase")
+#Obtain the human projects available in recount3
+human_projects <- available_projects()
+proj_info_interactive <- interactiveDisplayBase::display(human_projects)
+
+``` 
+
+Another alternative is to review the projects related to the data that is stored in the counts accesible when you load the data with `recount3::create_rse()`. This function allows you to create a RangedSummarizedExperiment object that contains the count data and associated metadata for a specific project. You can then explore the metadata to find information about the project and its samples. 
+Either way, we can review the projects information available in [recount3_projects](https://jhubiostatistics.shinyapps.io/recount3-study-explorer/)
+
+## Selected project 
+For this analysis we are going to select the `SRP119675` with the title "TREM2 Gene Dosage Increase Reprograms Microglia Responsivity and Ameliorates Pathological Phenotypes in Alzheimer's Disease Models", same that has the data fo the study [paper](https://www.cell.com/neuron/fulltext/S0896-6273(18)30101-6?_returnURL=https%3A%2F%2Flinkinghub.elsevier.com%2Fretrieve%2Fpii%2FS0896627318301016%3Fshowall%3Dtrue) in this article the autors explore the role of the upregulation of TREM2 a receptor located in the micrglial membrane and mostly expressed in those cells
