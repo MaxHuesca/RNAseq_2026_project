@@ -1,17 +1,59 @@
+---
+output: 
+  pdf_document: 
+    toc: yes
+    toc_depth: 5
+    fig_caption: true
+    keep_tex: true
+    number_sections: true
+    latex_engine: xelatex
+fontsize: 11pt
+mainfont: Times New Roman
+header-includes:
+  - \usepackage{fancyvrb}
+  - \fvset{fontsize=\tiny}
+  - \usepackage{float}
+  - \usepackage{graphicx}
+  - \usepackage{geometry}
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \usepackage{fvextra}
+  - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{fontsize=\footnotesize,commandchars=\\\{\}}
+  - \DefineVerbatimEnvironment{Verbatim}{Verbatim}{fontsize=\footnotesize}
+  - \usepackage[hyphens]{url}
+  - \usepackage{microtype} 
+csl: apa.csl
+---
+
 # Diferential expression analysis using a data set from recount3 
 
 ## Exploration of the data in recount3
 recount3 is an online resource consisting of RNA-seq gene, exon, and exon-exon junction counts as well as coverage bigWig files for 8,679 and 10,088 different studies for human and mouse respectively. It is the third generation of the ReCount project and part of recount.bio. We can use functions like `available_projects()` to obtain a data frame with all the projects available in recount3, and then we can use functions like `create_rse_manual()` to create a RangedSummarizedExperiment object for a specific project, which contains the count data and associated metadata for that project. 
 
 ```{r}
-library("recount3")
+#load all the libraries for the analysis
+library(recount3)
+library(edgeR)
+library(ggplot2)
+library(SummarizedExperiment)
+library(iSEE)
+library(SingleCellExperiment)
+library(scater)
+library(dplyr)
+library(variancePartition)
+library(limma)
+library(ComplexHeatmap)
+library(ggrepel)
+```
+
+```{r}
 #Obtain the firts 10 projects
 projects <- available_projects()
 #Show the structure of the data
 head(projects)
 
 cat(
-  "Los proyectos disponibles son:",
+  "The firsts 10 projects available are:",
   paste(head(projects$project, 10), collapse = "\n"),
   "\n"
 )
@@ -33,4 +75,795 @@ Another alternative is to review the projects related to the data that is stored
 Either way, we can review the projects information available in [recount3_projects](https://jhubiostatistics.shinyapps.io/recount3-study-explorer/)
 
 ## Selected project 
-For this analysis we are going to select the `SRP119675` with the title "TREM2 Gene Dosage Increase Reprograms Microglia Responsivity and Ameliorates Pathological Phenotypes in Alzheimer's Disease Models", same that has the data fo the study [paper](https://www.cell.com/neuron/fulltext/S0896-6273(18)30101-6?_returnURL=https%3A%2F%2Flinkinghub.elsevier.com%2Fretrieve%2Fpii%2FS0896627318301016%3Fshowall%3Dtrue) in this article the autors explore the role of the upregulation of TREM2 a receptor located in the micrglial membrane and mostly expressed in those cells
+For this analysis we are going to select the `SRP119675` with the title "TREM2 Gene Dosage Increase Reprograms Microglia Responsivity and Ameliorates Pathological Phenotypes in Alzheimer's Disease Models", same that has the data fo the study [paper](https://www.cell.com/neuron/fulltext/S0896-6273(18)30101-6?_returnURL=https%3A%2F%2Flinkinghub.elsevier.com%2Fretrieve%2Fpii%2FS0896627318301016%3Fshowall%3Dtrue) in this article the autors explore the role of the upregulation of TREM2 a receptor located in the micrglial membrane and mostly expressed in those cells  for mas information about the original project you can review the paper located in `/docs/Art_from_data.pdf`. 
+
+### Load the data of the project 
+
+The first step is to store el the data information in a multidimentional object summarize experiment class, that contains 3 fundamental structures, firstly the colData structure with the atributes of the experiment including the variables that are relevant for the analysis, second a assay obeject that is analog to a count matrix, in this the object store all the counts (normaly raw counst an counts that are normalized by recount3) and finaly the rowData that stores all the information about the anotation is like the gff prosced information after the alignment and firts steps when you are working with srr files (NGS lecture files). 
+
+```{r}
+#Now weare going to initialize the object of summarized experiment to narrow down the Data loading a preporccesing
+rse_gene_SRP119675_raw <- recount3::create_rse_manual(
+  project = "SRP119675",
+  project_home = "data_sources/sra",
+  organism = "mouse",
+  annotation = "gencode_v23",
+  type = "gene"
+)
+#and compute the counts with the function compute_read_counts
+assay(rse_gene_SRP119675_raw, "counts") <- compute_read_counts(
+  rse_gene_SRP119675_raw
+)
+``` 
+
+Then we can start exploring the data loaded to see the status and charesteristics of the data. We can start with the dimensions of the data, the number of genes and samples, and then we can review the metadata associated with the samples to understand the experimental design and conditions.  
+
+```{r, echo=FALSE} 
+#we can see teh title of the project with the metadata of the object
+cat(
+  "The project title is:",
+  rse_gene_SRP119675_raw$sra.study_title[1],
+  "\n"
+)
+
+cat(
+  "With a total number of genes of:",
+  dim(rse_gene_SRP119675_raw)[1],
+  "In this number of samples:",
+  dim(rse_gene_SRP119675_raw)[2],
+  "\n"
+)
+``` 
+
+Now it is important to review the attributes of the sra samples, in order to have our cathegories of interest to perform the analysis. For that task we can review the `sra.sample_attributes` column of our object, viewing for unconsistent features in the structure. 
+
+```{r, echo=FALSE} 
+#we can see teh title of the project with the metadata of the object
+rse_gene_SRP119675_raw$sra.sample_attributes[1:9]
+``` 
+
+We can see that the sample attributes do not have a errors with missing values in the first 10 samples so we can trie to expand this attributes so we procesed to make sure it is consistent with all the samples that are provided in the data sets so now we can search for posible problems in the structure. Particulary we are reviewing for values like "NA" or inconsistent gaps in the structure like samples without the atrributes for expanding. 
+
+```{r, echo=FALSE} 
+# first we explore if we have NA values in the structre
+cat(
+  "The project has this number of NA values in the sample attributes:",
+  sum(is.na(rse_gene_SRP119675_raw$sra.sample_attributes)),
+  "\n"
+)
+
+#We also see fo unconsistent gaps like those that has no attributes at all, we can see that with the following code
+
+cat(
+  "The project has this distibutions of the strcture 'atribute_1;;value_1|atribute_2;;value_2':",
+  table(stringr::str_count(
+    rse_gene_SRP119675_raw$sra.sample_attributes,
+    "\\|"
+  )),
+  "\n"
+)
+``` 
+
+We can see that neither of the samples atributes are NA nor are inconsistent with the number of atributes in te structure `atribute_1;;value_1|atribute_2;;value_2`, so we can expand the atributes usign the function for the Summarize experiment object `expand_sra_attributes()` 
+
+```{r, echo=FALSE} 
+# We delete the samples that do not have all the sra atributes
+valid <- stringr::str_count(
+  rse_gene_SRP119675_raw$sra.sample_attributes,
+  "\\|"
+) ==
+  6
+
+rse_gene_SRP119675 <- rse_gene_SRP119675_raw[, valid]
+
+#we trie to expand the attributes again with the filtered data, and now it should work without problems
+rse_gene_SRP119675 <- expand_sra_attributes(rse_gene_SRP119675)
+``` 
+
+Now we can see the atributes that were expanded and those are considered our variables that we can use in the model of de diferential expression analysis 
+
+```{r, error=TRUE, echo=FALSE} 
+#we saw the atributes it has expanded
+expanded_atributes <- colData(rse_gene_SRP119675)[, grepl(
+  "^sra_attribute",
+  colnames(colData(rse_gene_SRP119675))
+)]
+
+cat(
+  "The project has the following attributes after expanding:\n",
+  paste(colnames(expanded_atributes), collapse = "\n"),
+  "\n"
+)
+``` 
+
+So then we have to adjust the types of the atributes in order to have them ready for a stadistical analysis, firts reviewing the data types of the sra atributes
+
+```{r, echo=FALSE} 
+cat(
+  "The data types of the attributes before adjusting are:",
+  type(expanded_atributes),
+  "\n"
+)
+
+summary(as.data.frame(expanded_atributes))
+``` 
+
+We can changue the types of: 
+
+as.factor: 
+- sra_attribute.gender
+- sra_attribute.genotype 
+- sra_attribute.tissue
+- sra_attribute.source_name
+- sra_attribute.brain_region
+
+```{r} 
+#we can adjust the types of the attributes
+rse_gene_SRP119675$sra_attribute.gender <- as.factor(
+  rse_gene_SRP119675$sra_attribute.gender
+)
+
+rse_gene_SRP119675$sra_attribute.genotype <- as.factor(
+  rse_gene_SRP119675$sra_attribute.genotype
+)
+
+rse_gene_SRP119675$sra_attribute.tissue <- as.factor(
+  rse_gene_SRP119675$sra_attribute.tissue
+)
+
+rse_gene_SRP119675$sra_attribute.source_name <- as.factor(
+  rse_gene_SRP119675$sra_attribute.source_name
+)
+
+rse_gene_SRP119675$sra_attribute.age <- as.factor(
+  rse_gene_SRP119675$sra_attribute.age
+)
+
+rse_gene_SRP119675$sra_attribute.brain_region <- as.factor(
+  rse_gene_SRP119675$sra_attribute.brain_region
+)
+``` 
+
+Now we can resume the exploration of the data with the new attributes, and we can see the distribution of the samples in the different categories of the attributes. 
+
+```{r, echo=FALSE}
+#we can see the distribution of the samples in the different categories of the attributes
+summary(as.data.frame(colData(rse_gene_SRP119675)[, grepl(
+  "^sra_attribute",
+  colnames(colData(rse_gene_SRP119675))
+)]))
+``` 
+
+With this we can see there are important variables for consider in our DE analysis, varibles like age, genotype or gender would be interesant to explore once we narrow down the following steps. 
+
+With all this parsed data and assigned types we now start narrowing down the first step of a differential expression analysis, which is the exploration of the data and the review of the experimental design, in order to have a clear understanding of the data we are going to analyze and the conditions we are going to compare.  
+
+## Preprocessing the data 
+
+The next part to narrow down a diferential expression analysis is to pre-process the data, which includes exploring the data, filtering, and normalizing it. In this section, we will explore the data and perform some pre-processing steps to prepare it for the differential expression analysis. In this part also is hellpfull to visuzalize the data to understand the conformation and state of the data, this with the principal porpose of identify any important variable that has to be included in the model to avoid confounding effects. 
+
+### Exploring the data
+In this section we try to visualize the distribution of the data according to differents groups related with our qualitative variables, for this purpose we can use boxplots, density plots, and PCA plots to visualize the distribution of the data and identify any potential outliers or batch effects. This is related, for example with the plate the mise were processed, or view diference between groups with different phenotypes in our dataset, even in groups with the same phenotype but different sex or age. 
+
+### Filtering 
+
+#### Number of reads per group 
+It is important to start filtering the counts that have a low proportion in pur analysis, this with the objective of do not consider those counts that has no stadistic power because it´s poor representation due to possible biased in the sequencing reaction, like bias related to the size of the reads.  
+
+```{r, echo=FALSE}
+#We calculate the proportion of the genes based on the total (normalizing from teh real scale to 0-1 scale)
+rse_gene_SRP119675$assigned_gene_prop <- rse_gene_SRP119675$recount_qc.gene_fc_count_all.assigned /
+  rse_gene_SRP119675$recount_qc.gene_fc_count_all.total
+
+#Obtain the quartiles of our distribution
+summary(rse_gene_SRP119675$assigned_gene_prop)
+``` 
+
+With this we can saw that the mean and the medium value are prety close and it does not seem to be a biased to one of the ways, but the objective is to eliminate those tha are poorly represented, and for this we can focus on those that are at the minium of proportion, for that we can make a histogram and dots plot for vizualiazting this mins values. 
+
+```{r, fig.show= hold, exho= FALSE}
+#We transfrom the colData information as a data frame to plot it using ggplot2
+df <- as.data.frame(colData(rse_gene_SRP119675))
+
+#Fisrt we plot a line with the gene proportions accounted by the data
+ggplot(
+  df,
+  aes(x = reorder(rownames(df), assigned_gene_prop), y = assigned_gene_prop)
+) +
+  geom_point(alpha = 0.6) +
+  theme_classic(base_size = 14) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  labs(
+    title = "Assigned Gene Proportion per Sample",
+    x = "Samples (ordered)",
+    y = "Assigned Gene Proportion"
+  )
+
+
+#We make the histogram of the same proportions to view in a better way
+ggplot(df, aes(x = assigned_gene_prop)) +
+  geom_histogram(
+    bins = 30,
+    fill = "steelblue",
+    color = "white",
+    alpha = 0.8
+  ) +
+  labs(
+    title = "Distribution of Assigned Gene Proportion",
+    x = "Assigned Gene Proportion",
+    y = "Frequency"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+We can observed that there are some values that desviate from the distribution, in this case are those that are bellow the value of the first Quartile with a treshold of (0.810), so we can filter that samples with low gene proportion coverage. 
+
+```{r, echo=FALSE}
+#show that genes that are under the treshold
+cat(
+  "Muestras que se encuentran por debajo del humbral de 0.810: ",
+  table(rse_gene_SRP119675$assigned_gene_prop < 0.810)[2]
+)
+
+rse_gene_SRP119675_filtered <- rse_gene_SRP119675[,
+  rse_gene_SRP119675$assigned_gene_prop > 0.810
+]
+```
+
+#### Expression levels  
+Also is important to not consider those counts that do not apport stadistical power to the DE analysis for this we can achive this with an stadistical backgruond provided by the fucntion `edgeR::filterByExpr()`, this is important to account with thse genes that are relevant in our groups that we selected important for modeling the diference in the expresion.
+
+```{r}
+#we filter the levels of expression based on the age groups
+keep <- filterByExpr(
+  assay(rse_gene_SRP119675_filtered),
+  group = colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype
+)
+rse_gene_SRP119675_filtered <- rse_gene_SRP119675_filtered[keep, ]
+
+```
+
+
+### Normalization 
+For the final step is important to Normalize the data this in order to have equivalence in expression levels acroos the data and elimanting the *composition bias*, for this issue we are using the `DGEList` function of the edgeR library 
+
+
+```{r}
+dge <- DGEList(
+  counts = assay(rse_gene_SRP119675_filtered, "counts"),
+  genes = rowData(rse_gene_SRP119675_filtered)
+)
+dge <- calcNormFactors(dge)
+
+logCPM <- edgeR::cpm(dge, log = TRUE)
+assay(rse_gene_SRP119675_filtered, "logCPM") <- logCPM
+
+```
+
+
+### iSEE 
+One good alternative to explore the data in an interactive way is to use the library `ìSEE` that use the obects of summarize experiment to make panels of diferent types of plots
+
+```{r, eval=FALSE}
+iSEE::iSEE(rse_gene_SRP119675_filtered)
+```
+
+Because we do not have all the time the reduction of dimentionality analysis we can do that converting our object to a SingleCellExperiment to perform the following reduction of dimentionality analysis 
+
+
+```{r}
+#for ploting with isee
+sce_gene_SRP119675_filtered <- as(
+  rse_gene_SRP119675_filtered,
+  "SingleCellExperiment"
+)
+```
+
+#### PCA
+We can do a principal componeny analysis (PCA) for viewing how our samples agruops based on the variation that the principal component (PCs) can explain, the objetive of doing this is to realtionata variable (qualitative, discrete variable) to the clustering of the samples
+```{r, echo=FALSE}
+#we have to transfrom our sumarized experiment object to a single cell experiment object to compute the principal components
+#now we run de PCA
+sce_gene_SRP119675_filtered <- scater::runPCA(
+  sce_gene_SRP119675_filtered,
+  exprs_values = "logCPM",
+  ncomponents = 10
+)
+
+se <- sce_gene_SRP119675_filtered
+colormap <- ExperimentColorMap()
+se <- iSEE::cleanDataset(se)
+colormap <- synchronizeAssays(colormap, se)
+
+#plot the PCA
+red.dim <- reducedDim(se, "PCA")
+plot.data <- data.frame(
+  X = red.dim[, 1],
+  Y = red.dim[, 2],
+  row.names = colnames(se)
+)
+
+plot.data$ColorBy <- colData(se)[, "sra_attribute.genotype"]
+
+# Avoid visual biases from default ordering by shuffling the points
+set.seed(142)
+plot.data <- plot.data[sample(nrow(plot.data)), , drop = FALSE]
+
+ggplot() +
+  geom_point(
+    aes(x = X, y = Y, color = ColorBy),
+    alpha = 1,
+    plot.data,
+    size = 1
+  ) +
+  labs(
+    x = "Dimension 1",
+    y = "Dimension 2",
+    color = "sra_attribute.genotype",
+    title = "PCA"
+  ) +
+  coord_cartesian(
+    xlim = range(plot.data$X, na.rm = TRUE),
+    ylim = range(plot.data$Y, na.rm = TRUE),
+    expand = TRUE
+  ) +
+  scale_color_manual(
+    values = colDataColorMap(
+      colormap,
+      "sra_attribute.genotype",
+      discrete = TRUE
+    )(4),
+    na.value = 'grey50',
+    drop = FALSE
+  ) +
+  scale_fill_manual(
+    values = colDataColorMap(
+      colormap,
+      "sra_attribute.genotype",
+      discrete = TRUE
+    )(4),
+    na.value = 'grey50',
+    drop = FALSE
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = 'bottom',
+    legend.box = 'vertical',
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    title = element_text(size = 12)
+  )
+
+```
+
+
+#### MDS
+As we  done withh the PCA the muldimentional scaling is other technique widely used in larga data sets for acounting similarity/dissimilarity between objects in a low-dimensional space.
+```{r, echo=FALSE}
+mat <- edgeR::cpm(dge, log = TRUE)
+dist_mat <- dist(t(mat))
+mds <- cmdscale(dist_mat, k = 2)
+
+reducedDims(sce_gene_SRP119675_filtered)$MDS <- mds
+
+red.dim <- reducedDim(sce_gene_SRP119675_filtered, "MDS")
+plot.data <- data.frame(
+  X = red.dim[, 1],
+  Y = red.dim[, 2],
+  row.names = colnames(se)
+)
+
+plot.data$ColorBy <- colData(se)[, "sra_attribute.genotype"]
+
+# Avoid visual biases from default ordering by shuffling the points
+set.seed(142)
+plot.data <- plot.data[sample(nrow(plot.data)), , drop = FALSE]
+
+ggplot() +
+  geom_point(
+    aes(x = X, y = Y, color = ColorBy),
+    alpha = 1,
+    plot.data,
+    size = 1
+  ) +
+  labs(
+    x = "Dimension 1",
+    y = "Dimension 2",
+    color = "sra_attribute.genotype",
+    title = "MDS"
+  ) +
+  coord_cartesian(
+    xlim = range(plot.data$X, na.rm = TRUE),
+    ylim = range(plot.data$Y, na.rm = TRUE),
+    expand = TRUE
+  ) +
+  scale_color_manual(
+    values = colDataColorMap(
+      colormap,
+      "sra_attribute.genotype",
+      discrete = TRUE
+    )(4),
+    na.value = 'grey50',
+    drop = FALSE
+  ) +
+  scale_fill_manual(
+    values = colDataColorMap(
+      colormap,
+      "sra_attribute.genotype",
+      discrete = TRUE
+    )(4),
+    na.value = 'grey50',
+    drop = FALSE
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = 'bottom',
+    legend.box = 'vertical',
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 11),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    title = element_text(size = 12)
+  )
+
+```
+
+### Variance Partition 
+
+As we can note neither the PCA nor the MDS could explain the variance in the expression levels previous the DE analysis so we can do a secondary analisis of `variancePartition` to acces the task of identifing the more relevant variables in our data, in other words those variables that explain in high level the variance in our data. 
+
+#### Variance explicated for each variable  
+
+```{r}
+form <- form <- ~ sra_attribute.genotype +
+  sra_attribute.age +
+  sra_attribute.gender
+varPart <- variancePartition::fitExtractVarPartModel(
+  logCPM,
+  form,
+  colData(rse_gene_SRP119675_filtered)
+)
+vp <- sortCols(varPart)
+
+plotVarPart(vp)
+```
+
+We can see that the most variance in our dataset is explained by the individual variance acroos the samples followed by the variance of the age and genotype, something important to see of these plots is that some genes variance is explained by the age as well as the genotype, that genes could no represent the total variance across samples an that was beacause we could not separate the clusters in the dimentional reduction analysis like PCA or MDS. 
+
+#### Correlated variables 
+
+```{r}
+form <- ~ (1 | sra_attribute.genotype) +
+  (1 | sra_attribute.age) +
+  (1 | sra_attribute.gender) +
+  (1 | sra_attribute.source_name)
+
+C <- canCorPairs(form, colData(rse_gene_SRP119675_filtered))
+
+plotCorrMatrix(C)
+
+#for variance explication of a particular gene plotPercentBars(vp[gene, ])
+```
+
+We can see that the variable `sra_attribute.source_name` is highly correlated with the other varibles so we can drop out from de DE analysis
+
+### Boxplots 
+
+Finaly we can see the boxplot distribution of the samples, this can set a milestone of the aparently diference in the gene distribution acroos the genotypes in this case 
+
+```{r}
+ggplot(
+  as.data.frame(colData(rse_gene_SRP119675_filtered)),
+  aes(
+    y = assigned_gene_prop,
+    x = sra_attribute.genotype,
+    fill = sra_attribute.genotype
+  )
+) +
+  geom_boxplot() +
+  theme_bw(base_size = 20) +
+  ylab("Assigned Gene Prop") +
+  xlab("Age Group") +
+  scale_fill_discrete(name = "Genotype")
+
+```
+
+With this data preprocces coupled with the varianace analyses of the genes acroos the available variables we can have an idea of what we should consider in our mode, In this case we can consider the genotype, age and gender those that explain the more variance and do not are correlated with each other.  
+
+## DE analysis 
+
+ith the previous steps of a DE analysis now we can narrow down the formal DE analysis for this we are using the [limma](https://bioconductor.org/packages//release/bioc/html/limma.html) package, this package adjust linear models to the genes to acces linear regretions about its expression and then adjust that values to model the diferential expression genes, becaouse it accounts with large amounts of testing it retruves a padj value associated with the log2 fold changues.  
+
+### Creating a model  
+As we could see in the preprocessing part of the analysis the variables that are relavant for explaining variance in some genes that would be of interest are: 
+- sra_attribute.genotype --> as the principal 
+- sra_attribute.age 
+- sra_attribute.gender 
+
+So with this in mind we can define our `model.matrix` object for account for our estadistical assuptions, knowing that great part of the variance is explicated also for the age so we can model this as a interation model where the genotype can vary the expression of the genes as the age of the mice in the study. 
+
+$$
+Y=\beta_0​+\beta_G​+\beta_T​+\beta_G:T​+\beta_S​+\epsilon
+$$
+
+```{r, echo=FALSE}
+#define the object
+mod <- model.matrix(
+  ~ sra_attribute.genotype * sra_attribute.age + sra_attribute.gender,
+  data = colData(rse_gene_SRP119675_filtered)
+)
+
+#visualize the attributes we are modeling
+print(colnames(mod))
+
+#we can compare this with our levels of our variables to know which is the reference used for the intercept, because for default analysis modelmatrix use the first level of the attribute:
+print("The reference levels or baseline we are using are")
+
+cat(
+  "For the genotype:\n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype)[1],
+  "\n"
+)
+
+cat(
+  "For the age:\n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.age)[1],
+  "\n"
+)
+
+cat(
+  "For the gender:\n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.gender)[1],
+  "\n"
+)
+```  
+
+We can see that the baseline for our firt variable genotype is the 5xFAD, beacuse it is a genotype that is used for exploring alzheimer disease (AD) in mouse (3 APP mutations) we can conserved it to explore in a more easy way the efect of the upregulated expression of TREM2 copared with the genes expresed in a AD model mouse   
+
+#### For re-estructure the defaults coeficients (baselines) in the model 
+
+```{r, eval= FALSE}
+#redifine the first element of the levels
+
+#only if we want to changue the order of the model to set "WT as reference"
+colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype <- relevel(
+  colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype,
+  ref = "WT"
+)
+
+cat(
+  "The new baselinen for the genotype would be: \n",
+  levels(colData(rse_gene_SRP119675_filtered)$sra_attribute.genotype)[1],
+  "\n"
+)
+
+#redifine de model
+mod <- model.matrix(
+  ~ sra_attribute.genotype + sra_attribute.age + sra_attribute.gender,
+  data = colData(rse_gene_SRP119675_filtered)
+)
+
+#visualize the attributes we are modeling
+print(colnames(mod))
+
+``` 
+
+Now we can fit this model to the linear one that use limma, in this case. because we are usign two variables intercting, we are fitting the complete linear model to our data  
+
+```{r}
+vGene <- voom(dge, mod, plot = TRUE)
+
+eb_results <- eBayes(lmFit(vGene))
+``` 
+
+Once he have made the DE modeling we can analyze the results in fucntion of our design it is important to note that the coeficients in the DE model reflex the diference (because the way we define our model) with the reference in genotype, age and gener (those variables to consider because there were explaining a important part of variance among some genes) in our case the results are contrasted with the genotype 5XFAD, gender female and age 2m.  
+
+```{r, echo=FALSE}
+attributes_mod <- colnames(mod)
+for (attribute in attributes_mod[-1]) {
+  cat(
+    "The position of the atrribute",
+    attribute,
+    "is the coef:",
+    match(attribute, attributes_mod),
+    "\n"
+  )
+}
+``` 
+
+You can see that the atributes changed a lot, this beacause we are modeling the changue in the genotype that could vary across diferent measures, in all cases considering the efect of the age, that is why we have attributes like `sra_attribute.genotype5xFAD/BAC-TREM2:sra_attribute.age4m`. 
+
+So now with the resolution of the model that is the resolution of the coficents for the adjusment of the linear model to our variables we can plot the diferent comparations we are mading for that we are going to extract the tables from the complex `eb_results`(class `MArrayLM`). 
+
+### Volcano Plots  
+Before making the volcano plots we have to extract the top tables of the data acoording to the comparison (coeficents before showed) 
+
+```{r}
+#we store the names of the
+coef_names <- colnames(mod)[-1]
+
+#apply anonymus function lambda
+tt_list <- lapply(coef_names, function(coef_name) {
+  topTable(
+    eb_results,
+    coef = coef_name,
+    number = nrow(rse_gene_SRP119675_filtered),
+    sort.by = "none"
+  )
+})
+
+#save the names of our comparisons
+names(tt_list) <- coef_names
+```
+
+Now we can plot it, we are ploting the baseline 5XFAD with age 2 months with all the diferent condition including those we the time could explain the variation in our expression levels
+
+```{r, fig.show=hold, echo=FALSE}
+#We set the coutes for significant diferential expressed genes
+lfc_cut <- 1
+fdr_cut <- 0.05
+
+for (name in names(tt_list)) {
+  #extract the top table we are ploting
+  res <- tt_list[[name]]
+  plot_title <- paste(sub("sra_attribute.", "", name), " vs 5XFAD", sep = "")
+  #Clasify its value for them that are significant DE expressed (for coloring them)
+  res$group <- "NS"
+  res$group[res$adj.P.Val < fdr_cut & res$logFC > lfc_cut] <- "Up"
+  res$group[res$adj.P.Val < fdr_cut & res$logFC < -lfc_cut] <- "Down"
+
+  #also mark all those genes that arae significant for ploting its name
+  label_genes <- res[
+    res$adj.P.Val < 10 & abs(res$logFC) > lfc_cut,
+  ]
+
+  plot <- ggplot(res, aes(x = logFC, y = -log10(adj.P.Val), color = group)) +
+    geom_point(alpha = 0.7, size = 1.8) +
+    # Set lines for the tresholds
+    geom_vline(xintercept = c(-lfc_cut, lfc_cut), linetype = "dashed") +
+    geom_hline(yintercept = -log10(fdr_cut), linetype = "dashed") +
+    scale_color_manual(
+      values = c(
+        "Down" = "#2C7BB6", # azul
+        "NS" = "grey80", # gris tenue
+        "Up" = "#D7191C" # rojo
+      )
+    ) +
+    #Show the names of the genes
+    #geom_text_repel(
+    #  data = label_genes,
+    #  aes(label = rownames(label_genes)),
+    #  size = 3,
+    #  max.overlaps = 20
+    #) +
+    theme_minimal(base_size = 14) +
+    labs(
+      title = plot_title,
+      x = "log2 Fold Change",
+      y = "-log10 Adjusted P-value",
+      color = ""
+    )
+
+  print(plot)
+}
+```
+
+With this results we can make an idea of the conditions that have more DE genes, we can see that the DE genes increase with the time (represented with the variable age), and that the proportion of upregulated and downregulated should be not the same in the WT with the TREM2 phenotype but has a similiar trend, so we can focus on the diference betwen the 5XFAD-TREM2 phenotype and TREM 2 phenotype comapred with our baseline the 5XFAD phenotype. 
+
+### HeatMap
+Now it is time to do a heatmap about the diferentianl expresion we can see in the genotype with alzheimer (5XFAD) tith those with the 5XFAD but with the TREM2 overexpression and how it changues over the time, something that we saw in the Volano plots is clear increase in up and downregulated genes. 
+
+
+#### BAC-TREM2 vs 5XFAD over the time 
+
+First we have to re calculate the fit model with the contrast by the time 
+
+```{r}
+#changue the names of the coeficents
+colnames(mod) <- make.names(colnames(mod))
+
+
+#we make the contrast acroos both times
+contrast.matrix <- makeContrasts(
+  C5XFAD_TREM2_vs_5XFAD_4m = sra_attribute.genotype5xFAD.BAC.TREM2.sra_attribute.age4m,
+  C5XFAD_TREM2_vs_5XFAD_7m = sra_attribute.genotype5xFAD.BAC.TREM2.sra_attribute.age7m,
+  levels = mod
+)
+
+eb_contrats_5X.TREM2 <- contrasts.fit(eb_results, contrast.matrix)
+eb_contrats_5X.TREM2 <- eBayes(eb_contrats_5X.TREM2)
+
+
+contrast.matrix <- makeContrasts(
+  TREM2_vs_5XFAD_4m = sra_attribute.genotypeBAC.TREM2.sra_attribute.age4m,
+  TREM2_vs_5XFAD_7m = sra_attribute.genotypeBAC.TREM2.sra_attribute.age7m,
+  levels = mod
+)
+
+eb_contrats.TREM2 <- contrasts.fit(eb_results, contrast.matrix)
+eb_contrats.TREM2 <- eBayes(eb_contrats.TREM2)
+
+
+#store the objects in a list
+contrast_list <- list(eb_contrats.TREM2, eb_contrats_5X.TREM2)
+names(contrast_list) <- c("5XFAD vs TREM2 ", "5XFAD vs 5XFAD-TREM2")
+```
+
+Now we can make the heatmaps.
+
+
+```{r, echo=FALSE}
+#retrive the anotaion of the genes in order to do not report that in the heatmaps
+annotation <- contrast_list[[1]]$genes
+annotation$gene_id_clean <- sub("\\..*$", "", annotation$gene_id)
+gene_map <- setNames(annotation$gene_name, annotation$gene_id_clean)
+
+dev.new()
+
+for (nm in names(contrast_list)) {
+  contrast <- contrast_list[[nm]]
+  plot_title <- nm
+
+  res_4m <- topTable(contrast, coef = 1, number = Inf)
+  res_7m <- topTable(contrast, coef = 2, number = Inf)
+
+  sig_genes <- unique(c(
+    rownames(res_4m[res_4m$adj.P.Val < 0.05, ]),
+    rownames(res_7m[res_7m$adj.P.Val < 0.05, ])
+  ))
+
+  if (length(sig_genes) == 0) {
+    next
+  }
+
+  sig_genes <- head(sig_genes, 50)
+
+  mat <- cbind(
+    "4m" = contrast$coefficients[sig_genes, 1],
+    "7m" = contrast$coefficients[sig_genes, 2]
+  )
+
+  clean_ids <- sub("\\..*$", "", rownames(mat))
+
+  rownames(mat) <- ifelse(
+    is.na(gene_map[clean_ids]),
+    clean_ids,
+    gene_map[clean_ids]
+  )
+  print(rownames(mat))
+  plot_ht <- Heatmap(
+    mat,
+    name = "log2 Fold Change",
+    column_title = plot_title,
+    cluster_columns = FALSE,
+    col = circlize::colorRamp2(
+      c(-2, 0, 2),
+      c("blue", "white", "red")
+    )
+  )
+
+  grid::grid.newpage()
+  draw(plot_ht)
+}
+
+``` 
+
+With this data we can know that there is a real effect in the pass of the time in expression acroos both comparsion betwen genotypes, we can see that the ones that have both alzheimer has the most dramaticaly log fold-changue, enrichment analysis would be good for draw back the biological information about the role of TREM2 in AD particulary in the model 5XFAD.
+
+## Discusion 
+`recount3` is a very usefool tool to acounting for the first steps when you are narrowing downn a DE analysis, it is very useful to have that easy way to chargue the data in a `SummarizeExperiment` object with all the information, with that you can start the visualizating of your data very fast after the normalized and some intermidate steps for making and idea of how your data has it´s distributuion and variance acroos the samples. 
+
+Something very important is to make sure of what to consider in the model for diferential expression, and what to no, for these tools like `iSEE` or even `variancePartion` are very useful. 
+
+Once your model is finaly define you can proced in a near straight foward way to the model of your variance using DE tools like `limma`, `edgeR`, `DeSeq2` or even `NOIseq`. 
+
+Last but not least ploting the results is another important way to make real what did you found on your analysis, this part is important to make sense about all that stadistcis the model retrives to you. 
+
+In this particular analysis we can note that the variance acroos the genes where explicated by the high variance acroos the samples, probably the razon why our sample doe not have clusters amoung our phenotypes, so in that we can search for the variables more contribute for our data with tools like `variancePartition` to make us an idea of what to consider in our model. 
+
+With the model well define we can narrow down the DE analysis for geting into the final step related with the results interpretation, in this part we can use **vulcano** and **heatmaps** plots to clasifie the genes that related to our model an its coeficents comparison are upregulated or downregulated with a metric for the confidence, represented as the p-value adjust (adjusted because the multi-testing efect). 

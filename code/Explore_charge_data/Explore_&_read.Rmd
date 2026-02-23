@@ -37,7 +37,7 @@ projects <- available_projects()
 head(projects)
 
 cat(
-  "Los proyectos disponibles son:",
+  "The firsts 10 projects available are:",
   paste(head(projects$project, 10), collapse = "\n"),
   "\n"
 )
@@ -116,7 +116,7 @@ assay(rse_gene_SRP119675_raw, "counts") <- compute_read_counts(
 )
 ```
 
-Then que can start exploring the data loaded to see the status and charesteristics of the data. We can start with the dimensions of the data, the number of genes and samples, and then we can review the metadata associated with the samples to understand the experimental design and conditions. 
+Then we can start exploring the data loaded to see the status and charesteristics of the data. We can start with the dimensions of the data, the number of genes and samples, and then we can review the metadata associated with the samples to understand the experimental design and conditions. 
 
 ```{r, echo=FALSE} 
 #we can see teh title of the project with the metadata of the object
