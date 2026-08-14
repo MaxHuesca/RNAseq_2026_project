@@ -1,6 +1,10 @@
 # Differential expression analysis in mice cortex tissue with upregulation of TREM2 
+![git hub](https://img.shields.io/badge/github-repo-blue?style=plastic&logo=github) ![R](https://img.shields.io/badge/R-4.4.3-%2344B7DB?style=plastic&logo=R) ![quato](https://img.shields.io/badge/Quarto-md-%233C78C9?style=plastic&logo=quarto)
+---
 > De Los Santos Huesca Ismael Maximiliano
 >
+> LCG - UNAM - 4 semester
+> 
 > A DE analysis using a dataset from recount3
 
 ## Summary 
